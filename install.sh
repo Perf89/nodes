@@ -99,14 +99,39 @@ while true; do
   show_menu
   read -rp "Выберите опцию: " option
   case $option in
-    1) install_geth ;;
-    2) install_lighthouse ;;
-    3) stop_all ;;
-    4) restart_all ;;
-    5) show_rpc ;;
-    6) show_logs ;;
-    7) exit 0 ;;
-    *) echo "Неверный ввод. Попробуйте снова." ;;
+    1)
+      install_geth
+      sleep 3
+      echo -e "\n[✓] Geth установлен и запущен."
+      ps aux | grep geth | grep -v grep
+      ;;
+    2)
+      install_lighthouse
+      sleep 3
+      echo -e "\n[✓] Lighthouse установлен и запущен."
+      ps aux | grep lighthouse | grep -v grep
+      ;;
+    3)
+      stop_all
+      ;;
+    4)
+      restart_all
+      ;;
+    5)
+      show_rpc
+      ;;
+    6)
+      show_logs
+      ;;
+    7)
+      echo "Выход..."
+      exit 0
+      ;;
+    *)
+      echo "Неверный ввод. Попробуйте снова."
+      ;;
   esac
-  sleep 2
+  echo -e "\nНажмите Enter для продолжения..."
+  read
 done
+
