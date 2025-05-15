@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Авторское меню от Perfnode
-
-clear
-echo -e "\n============================="
-echo "      by Perfnode         "
-echo -e "=============================\n"
-
 INSTALL_DIR="$HOME/aztec-rpc"
 JWT_SECRET="$INSTALL_DIR/jwt.hex"
 GETH_PORT=8545
 LIGHTHOUSE_PORT=5052
+
+show_banner() {
+  echo -e "\n============================="
+  echo "        by Perfnode         "
+  echo -e "=============================\n"
+}
 
 show_menu() {
   echo "========== Меню =========="
@@ -27,18 +26,13 @@ show_menu() {
 install_geth() {
   echo "[+] Установка Geth..."
   sudo apt update && sudo apt install -y curl wget unzip tar openssl
-
-  if ! command -v geth >/dev/null; then
-    curl -L -O https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-latest.tar.gz || { echo "Ошибка скачивания Geth"; exit 1; }
-    tar -xvzf geth-linux-amd64-latest.tar.gz
-    cd geth-linux-*/ && sudo cp geth /usr/local/bin/
-    cd ~ && rm -rf geth-linux-*
-  fi
+  wget -q https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-latest.tar.gz
+  tar -xvf geth-linux-amd64-latest.tar.gz
+  cd geth-linux-* && sudo cp geth /usr/local/bin/
+  cd ~ && rm -rf geth-linux-*
 
   mkdir -p "$INSTALL_DIR"
-  if [ ! -f "$JWT_SECRET" ]; then
-    echo "$(openssl rand -hex 32)" > "$JWT_SECRET"
-  fi
+  echo "$(openssl rand -hex 32)" > "$JWT_SECRET"
 
   echo "[+] Запуск Geth..."
   nohup geth --sepolia \
@@ -51,10 +45,7 @@ install_geth() {
 
 install_lighthouse() {
   echo "[+] Установка Lighthouse..."
-
-  if ! command -v lighthouse >/dev/null; then
-    curl -s https://raw.githubusercontent.com/sigp/lighthouse/master/ci/install.sh | bash || { echo "Ошибка установки Lighthouse"; exit 1; }
-  fi
+  curl -s https://raw.githubusercontent.com/sigp/lighthouse/master/ci/install.sh | bash
 
   echo "[+] Запуск Beacon-ноды..."
   nohup lighthouse bn \
@@ -80,12 +71,9 @@ restart_all() {
 }
 
 show_rpc() {
-  IPV4=$(curl -s ipv4.icanhazip.com)
-  IPV6=$(curl -s ipv6.icanhazip.com)
-  echo "RPC IPv4: http://$IPV4:$GETH_PORT"
-  echo "RPC IPv6: http://[$IPV6]:$GETH_PORT"
-  echo "BEACON RPC IPv4: http://$IPV4:$LIGHTHOUSE_PORT"
-  echo "BEACON RPC IPv6: http://[$IPV6]:$LIGHTHOUSE_PORT"
+  IP=$(curl -s ipv4.icanhazip.com)
+  echo "RPC адрес: http://$IP:$GETH_PORT"
+  echo "BEACON RPC: http://$IP:$LIGHTHOUSE_PORT"
 }
 
 show_logs() {
@@ -95,43 +83,30 @@ show_logs() {
   tail -n 20 "$INSTALL_DIR/lighthouse.log"
 }
 
+# --- Основная логика ---
+show_banner
+
+# Если скрипт запущен без терминала (через wget -O- | bash), то автоматическая установка
+if [[ ! -t 0 ]]; then
+  install_geth
+  install_lighthouse
+  show_rpc
+  exit 0
+fi
+
+# Иначе — показать меню
 while true; do
   show_menu
-  read -rp "Выберите опцию: " option
+  read -p "Выберите опцию: " option
   case $option in
-    1)
-      install_geth
-      sleep 3
-      echo -e "\n[✓] Geth установлен и запущен."
-      ps aux | grep geth | grep -v grep
-      ;;
-    2)
-      install_lighthouse
-      sleep 3
-      echo -e "\n[✓] Lighthouse установлен и запущен."
-      ps aux | grep lighthouse | grep -v grep
-      ;;
-    3)
-      stop_all
-      ;;
-    4)
-      restart_all
-      ;;
-    5)
-      show_rpc
-      ;;
-    6)
-      show_logs
-      ;;
-    7)
-      echo "Выход..."
-      exit 0
-      ;;
-    *)
-      echo "Неверный ввод. Попробуйте снова."
-      ;;
+    1) install_geth ;;
+    2) install_lighthouse ;;
+    3) stop_all ;;
+    4) restart_all ;;
+    5) show_rpc ;;
+    6) show_logs ;;
+    7) exit 0 ;;
+    *) echo "Неверный ввод. Попробуйте снова." ;;
   esac
-  echo -e "\nНажмите Enter для продолжения..."
-  read
+  sleep 2
 done
-
