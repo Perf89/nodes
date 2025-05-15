@@ -1,130 +1,101 @@
 #!/bin/bash
 
-RPC_PORT=8545
-BEACON_PORT=5052
+# Авторское меню от Perfnode
 
 clear
-echo -e "\e[1;34m==============================\e[0m"
-echo -e "\e[1;36m     Ethereum Sepolia Node     \e[0m"
-echo -e "\e[1;32m         by Perfnode          \e[0m"
-echo -e "\e[1;34m==============================\e[0m"
+echo -e "\n============================="
+echo "      by Perfnode         "
+echo -e "=============================\n"
 
-function install_node() {
-  echo -e "\n\e[1;33mУстановка зависимостей...\e[0m"
-  sudo apt update && sudo apt upgrade -y
-  sudo apt install -y curl git build-essential ufw unzip wget jq
+INSTALL_DIR="$HOME/aztec-rpc"
+JWT_SECRET="$INSTALL_DIR/jwt.hex"
+GETH_PORT=8545
+LIGHTHOUSE_PORT=5052
 
-  echo -e "\n\e[1;33mУстановка Docker и Docker Compose...\e[0m"
-  curl -fsSL https://get.docker.com | bash
-  sudo systemctl enable docker
-  sudo systemctl start docker
-
-  DOCKER_COMPOSE_VERSION="2.24.2"
-  sudo curl -L "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
-    -o /usr/local/bin/docker-compose
-  sudo chmod +x /usr/local/bin/docker-compose
-
-  echo -e "\n\e[1;33mНастройка ноды...\e[0m"
-  mkdir -p ~/eth-rpc && cd ~/eth-rpc
-
-  cat > docker-compose.yml <<EOF
-version: "3.9"
-services:
-  geth:
-    image: ethereum/client-go:stable
-    volumes:
-      - ./geth-data:/root/.ethereum
-    command: >
-      --sepolia
-      --http
-      --http.addr 0.0.0.0
-      --http.port ${RPC_PORT}
-      --http.api eth,net,web3
-      --http.corsdomain "*"
-      --ws
-      --ws.addr 0.0.0.0
-      --ws.port 8546
-      --ws.api eth,net,web3
-      --syncmode snap
-      --gcmode archive
-    ports:
-      - "${RPC_PORT}:${RPC_PORT}"
-      - "8546:8546"
-      - "30303:30303"
-    restart: unless-stopped
-EOF
-
-  docker compose up -d
-  echo -e "\n\e[1;32mНода установлена и запущена!\e[0m"
+show_menu() {
+  echo "========== Меню =========="
+  echo "1. Установить и запустить RPC-ноду"
+  echo "2. Установить и запустить Beacon-ноду"
+  echo "3. Остановить все"
+  echo "4. Перезапустить все"
+  echo "5. Показать RPC-адрес"
+  echo "6. Проверить логи"
+  echo "7. Выйти"
+  echo "==========================="
 }
 
-function install_beacon() {
-  echo -e "\n\e[1;33mУстановка Beacon Chain (Lighthouse)...\e[0m"
-  mkdir -p ~/beacon && cd ~/beacon
+install_geth() {
+  echo "[+] Установка Geth..."
+  sudo apt update && sudo apt install -y curl wget unzip tar
+  wget -q https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-latest.tar.gz
+  tar -xvf geth-linux-amd64-latest.tar.gz
+  cd geth-linux-*/ && sudo cp geth /usr/local/bin/
+  cd ~ && rm -rf geth-linux-*
 
-  cat > docker-compose.yml <<EOF
-version: "3.9"
-services:
-  lighthouse:
-    image: sigp/lighthouse:latest
-    command: >
-      lighthouse bn
-      --network sepolia
-      --checkpoint-sync-url https://sepolia.checkpoint-sync.ethpandaops.io
-      --http
-      --http-address 0.0.0.0
-      --http-port ${BEACON_PORT}
-    volumes:
-      - ./lighthouse-data:/root/.lighthouse
-    ports:
-      - "${BEACON_PORT}:${BEACON_PORT}"
-    restart: unless-stopped
-EOF
+  mkdir -p "$INSTALL_DIR"
+  echo "$(openssl rand -hex 32)" > "$JWT_SECRET"
 
-  docker compose up -d
-  echo -e "\n\e[1;32mBeacon нода установлена и запущена!\e[0m"
+  echo "[+] Запуск Geth..."
+  nohup geth --sepolia \
+    --http --http.addr 0.0.0.0 --http.port $GETH_PORT \
+    --http.api "eth,net,web3" \
+    --authrpc.addr 0.0.0.0 --authrpc.port 8551 \
+    --authrpc.vhosts="*" --authrpc.jwtsecret "$JWT_SECRET" \
+    > "$INSTALL_DIR/geth.log" 2>&1 &
 }
 
-function show_menu() {
-  echo -e "\n\e[1;34m========== Меню ==========\e[0m"
-  echo -e "\e[1;36m1.\e[0m Установить и запустить RPC-ноду"
-  echo -e "\e[1;36m2.\e[0m Установить и запустить Beacon-ноду"
-  echo -e "\e[1;36m3.\e[0m Остановить все"
-  echo -e "\e[1;36m4.\e[0m Перезапустить все"
-  echo -e "\e[1;36m5.\e[0m Показать RPC-адрес"
-  echo -e "\e[1;36m6.\e[0m Выйти"
-  echo -e "\e[1;34m===========================\e[0m"
+install_lighthouse() {
+  echo "[+] Установка Lighthouse..."
+  curl -s https://raw.githubusercontent.com/sigp/lighthouse/master/ci/install.sh | bash
+
+  echo "[+] Запуск Beacon-ноды..."
+  nohup lighthouse bn \
+    --network sepolia \
+    --execution-endpoint http://127.0.0.1:8551 \
+    --execution-jwt "$JWT_SECRET" \
+    --http --http-address 0.0.0.0 --http-port $LIGHTHOUSE_PORT \
+    > "$INSTALL_DIR/lighthouse.log" 2>&1 &
 }
 
-function stop_node() {
-  cd ~/eth-rpc && docker compose stop
-  cd ~/beacon && docker compose stop
-  echo -e "\e[1;33mНоды остановлены\e[0m"
+stop_all() {
+  pkill geth
+  pkill lighthouse
+  echo "Все процессы остановлены."
 }
 
-function restart_node() {
-  cd ~/eth-rpc && docker compose restart
-  cd ~/beacon && docker compose restart
-  echo -e "\e[1;33mНоды перезапущены\e[0m"
+restart_all() {
+  stop_all
+  sleep 2
+  install_geth
+  install_lighthouse
+  echo "Все перезапущено."
 }
 
-function show_rpc() {
-  IP=$(curl -s ifconfig.me)
-  echo -e "\n\e[1;32mRPC адрес: http://${IP}:${RPC_PORT}\e[0m"
-  echo -e "\e[1;32mBEACON RPC: http://${IP}:${BEACON_PORT}\e[0m"
+show_rpc() {
+  IP=$(curl -s ipv4.icanhazip.com)
+  echo "RPC адрес: http://$IP:$GETH_PORT"
+  echo "BEACON RPC: http://$IP:$LIGHTHOUSE_PORT"
+}
+
+show_logs() {
+  echo "--- Последние логи Geth ---"
+  tail -n 20 "$INSTALL_DIR/geth.log"
+  echo -e "\n--- Последние логи Lighthouse ---"
+  tail -n 20 "$INSTALL_DIR/lighthouse.log"
 }
 
 while true; do
   show_menu
-  read -rp $'\nВыберите пункт (1-6): ' choice
-
-  case "$choice" in
-    1) install_node ;;
-    2) install_beacon ;;
-    3) stop_node ;;
-    4) restart_node ;;
+  read -p "Выберите опцию: " option
+  case $option in
+    1) install_geth ;;
+    2) install_lighthouse ;;
+    3) stop_all ;;
+    4) restart_all ;;
     5) show_rpc ;;
-    6) echo -e "\e[1;34mВыход...\e[0m"; exit 0 ;;
-    *) echo -e "\e[1;31mНеверный ввод. Попробуйте снова.\e[0m" ;;
+    6) show_logs ;;
+    7) exit 0 ;;
+    *) echo "Неверный ввод. Попробуйте снова." ;;
   esac
+  sleep 2
 done
